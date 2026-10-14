@@ -4,7 +4,11 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
+import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -18,7 +22,11 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
-import java.util.concurrent.Executor
+import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
@@ -28,6 +36,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var statusText: TextView
     private var unlocked = false
+    private val io = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,7 +67,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // اگر از تنظیمات برگشت و هنوز قفل است
         if (!unlocked && !prefs.biometricEnabled) {
             unlockAndLoad()
         }
@@ -75,7 +84,7 @@ class MainActivity : AppCompatActivity() {
             unlockAndLoad()
             return
         }
-        val executor: Executor = ContextCompat.getMainExecutor(this)
+        val executor = ContextCompat.getMainExecutor(this)
         val prompt = BiometricPrompt(
             this,
             executor,
@@ -121,15 +130,76 @@ class MainActivity : AppCompatActivity() {
         unlocked = true
         lockPanel.visibility = View.GONE
         webView.visibility = View.VISIBLE
-        val url = prefs.serverUrl.let {
-            if (it.endsWith("/app") || it.contains("/login")) it else "$it/app"
-        }
         progress.visibility = View.VISIBLE
-        webView.loadUrl(url)
+
+        val token = prefs.deviceToken
+        if (token.isNotBlank()) {
+            // ورود نشست وب با توکن دستگاه (بعد از اثرانگشت)
+            io.execute {
+                val ok = loginWithDeviceToken(token)
+                mainHandler.post {
+                    if (ok) {
+                        webView.loadUrl(prefs.serverUrl + "/app")
+                    } else {
+                        // توکن باطل شده — یک‌بار لاگین رمز
+                        prefs.deviceToken = ""
+                        webView.loadUrl(prefs.serverUrl + "/login")
+                    }
+                }
+            }
+        } else {
+            // اولین بار: لاگین با رمز، بعد توکن دستگاه ذخیره می‌شود
+            webView.loadUrl(prefs.serverUrl + "/login")
+        }
+    }
+
+    private fun loginWithDeviceToken(token: String): Boolean {
+        return try {
+            val url = URL(prefs.serverUrl + "/api/auth/device")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+                instanceFollowRedirects = false
+            }
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { w ->
+                w.write(JSONObject().put("token", token).put("bio", true).toString())
+            }
+            val code = conn.responseCode
+            // کوکی نشست را به WebView منتقل کن
+            val cookieHeaders = conn.headerFields["Set-Cookie"] ?: conn.headerFields["set-cookie"]
+            if (cookieHeaders != null) {
+                val cm = CookieManager.getInstance()
+                for (c in cookieHeaders) {
+                    cm.setCookie(prefs.serverUrl, c)
+                }
+                cm.flush()
+            }
+            // بعضی سرورها چند Set-Cookie می‌فرستند
+            var i = 0
+            while (true) {
+                val key = conn.getHeaderFieldKey(i) ?: break
+                val value = conn.getHeaderField(i)
+                if (key.equals("Set-Cookie", ignoreCase = true) && value != null) {
+                    CookieManager.getInstance().setCookie(prefs.serverUrl, value)
+                }
+                i++
+            }
+            CookieManager.getInstance().flush()
+            code in 200..299
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
+        val cm = CookieManager.getInstance()
+        cm.setAcceptCookie(true)
+        cm.setAcceptThirdPartyCookies(webView, true)
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -138,25 +208,17 @@ class MainActivity : AppCompatActivity() {
             useWideViewPort = true
             builtInZoomControls = true
             displayZoomControls = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             cacheMode = WebSettings.LOAD_DEFAULT
-            userAgentString = userAgentString + " SignalAlertAndroid/1.0"
+            userAgentString = userAgentString + " SignalAlertAndroid/1.1"
         }
+        webView.addJavascriptInterface(JsBridge(), "SignalAndroid")
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?
-            ): Boolean {
-                // همه لینک‌های همان سرور داخل WebView
-                val u = request?.url?.toString().orEmpty()
-                return if (u.startsWith(prefs.serverUrl) || u.contains(prefs.serverUrl.removePrefix("http://").removePrefix("https://"))) {
-                    false
-                } else {
-                    // لینک خارجی در همان webview هم باز شود
-                    false
-                }
-            }
+            ): Boolean = false
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 progress.visibility = View.VISIBLE
@@ -164,6 +226,11 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 progress.visibility = View.GONE
+                CookieManager.getInstance().flush()
+                // بعد از ورود موفق به /app توکن دستگاه را ثبت کن
+                if (url != null && (url.contains("/app") || url.endsWith("/"))) {
+                    injectRegisterDeviceToken()
+                }
             }
 
             override fun onReceivedError(
@@ -178,6 +245,43 @@ class MainActivity : AppCompatActivity() {
                     "خطا در اتصال به سرور: ${description ?: ""}",
                     Toast.LENGTH_LONG
                 ).show()
+            }
+        }
+    }
+
+    private fun injectRegisterDeviceToken() {
+        // اگر قبلاً توکن داریم لازم نیست؛ ولی تازه‌سازی هم اشکالی ندارد
+        val js = """
+            (function(){
+              try {
+                fetch('/api/auth/device/register', {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: {'Content-Type': 'application/json'}
+                }).then(function(r){ return r.json(); })
+                  .then(function(j){
+                    if (j && j.ok && j.token && window.SignalAndroid) {
+                      window.SignalAndroid.saveDeviceToken(j.token);
+                    }
+                  }).catch(function(){});
+              } catch(e) {}
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
+    inner class JsBridge {
+        @JavascriptInterface
+        fun saveDeviceToken(token: String?) {
+            if (!token.isNullOrBlank()) {
+                prefs.deviceToken = token
+                mainHandler.post {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "ورود دستگاه ذخیره شد — دفعه بعد با اثرانگشت مستقیم وارد می‌شوید",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }

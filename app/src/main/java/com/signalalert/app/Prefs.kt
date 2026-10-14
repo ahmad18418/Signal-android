@@ -18,8 +18,13 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_BIO, true)
         set(value) = sp.edit().putBoolean(KEY_BIO, value).apply()
 
+    var deviceToken: String
+        get() = sp.getString(KEY_TOKEN, "") ?: ""
+        set(value) = sp.edit().putString(KEY_TOKEN, value).apply()
+
     companion object {
         private const val KEY_URL = "server_url"
         private const val KEY_BIO = "biometric_enabled"
+        private const val KEY_TOKEN = "device_token"
     }
 }
