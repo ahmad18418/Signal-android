@@ -2,6 +2,7 @@ package com.signalalert.app
 
 import android.os.Bundle
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
@@ -16,6 +17,8 @@ class SettingsActivity : AppCompatActivity() {
         val bio = findViewById<SwitchMaterial>(R.id.switchBiometric)
         url.setText(prefs.serverUrl)
         bio.isChecked = prefs.biometricEnabled
+        findViewById<TextView>(R.id.appVersion).text =
+            "نسخه اپ: v${BuildConfig.VERSION_NAME} (کد ${BuildConfig.VERSION_CODE})"
         findViewById<MaterialButton>(R.id.btnSave).setOnClickListener {
             val v = url.text?.toString()?.trim().orEmpty()
             if (v.isEmpty() || !(v.startsWith("http://") || v.startsWith("https://"))) {

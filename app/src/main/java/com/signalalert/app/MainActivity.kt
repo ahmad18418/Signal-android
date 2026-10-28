@@ -328,7 +328,7 @@ class MainActivity : AppCompatActivity() {
                     mainHandler.post {
                         Toast.makeText(
                             this@MainActivity,
-                            "خطای دانلود HTTP $code — دوباره وارد اپ شوید",
+                            "خطای دانلود HTTP " + code + " — دوباره وارد اپ شوید",
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -365,7 +365,7 @@ class MainActivity : AppCompatActivity() {
                 mainHandler.post {
                     Toast.makeText(
                         this@MainActivity,
-                        "ذخیره شد: Downloads/$fileName (${bytes.size / 1024} KB)",
+                        "ذخیره شد: Downloads/" + fileName + " (" + (bytes.size / 1024) + " KB)",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -427,46 +427,37 @@ class MainActivity : AppCompatActivity() {
 
     /** کلیک روی لینک دانلود بک‌آپ را به native بفرست */
     private fun injectDownloadHook() {
-        val js = """
-            (function(){
-              try {
-                window.saDownload = function(url, fileName) {
-                  var name = fileName || '';
-                  if (!name && url) {
-                    try { name = decodeURIComponent(String(url).split('/').pop() || ''); }
-                    catch(e) { name = String(url).split('/').pop() || 'backup.db'; }
-                  }
-                  if (!name) { alert('نام فایل مشخص نیست'); return false; }
-                  var path = '/settings/backup-download/' + encodeURIComponent(name);
-                  var abs = location.origin + path;
-                  if (window.SignalAndroid && window.SignalAndroid.downloadUrl) {
-                    window.SignalAndroid.downloadUrl(abs);
-                    return false;
-                  }
-                  location.href = path;
-                  return false;
-                };
-              } catch(e) {}
-              try {
-                document.querySelectorAll('a[href*="backup-download"], a[href*="/dl/backup/"]').forEach(function(a){
-                  if (a.__saHooked) return;
-                  a.__saHooked = true;
-                  a.addEventListener('click', function(ev){
-                    var h = a.getAttribute('href') || '';
-                    if (h.indexOf('backup-download') >= 0 || h.indexOf('/dl/backup/') >= 0) {
-                      ev.preventDefault();
-                      if (window.SignalAndroid && window.SignalAndroid.downloadUrl) {
-                        var abs = h.indexOf('http') === 0 ? h : (location.origin + (h.charAt(0)==='/'?h:'/'+h));
-                        window.SignalAndroid.downloadUrl(abs);
-                      } else {
-                        location.href = h;
-                      }
-                    }
-                  }, true);
-                });
-              } catch(e) {}
-            })();
-        """.trimIndent()
+        // فقط ASCII تا encoding/Git و Kotlin string مشکلی نسازد
+        val js = (
+            "(function(){" +
+            "try{" +
+            "window.saDownload=function(url,fileName){" +
+            "var name=fileName||'';" +
+            "if(!name&&url){try{name=decodeURIComponent(String(url).split('/').pop()||'');}" +
+            "catch(e){name=String(url).split('/').pop()||'backup.db';}}" +
+            "if(!name){return false;}" +
+            "var path='/settings/backup-download/'+encodeURIComponent(name);" +
+            "var abs=location.origin+path;" +
+            "if(window.SignalAndroid&&window.SignalAndroid.downloadUrl){" +
+            "window.SignalAndroid.downloadUrl(abs);return false;}" +
+            "location.href=path;return false;};" +
+            "}catch(e){}" +
+            "try{" +
+            "document.querySelectorAll('a[href*=\"backup-download\"],a[href*=\"/dl/backup/\"]').forEach(function(a){" +
+            "if(a.__saHooked)return;a.__saHooked=true;" +
+            "a.addEventListener('click',function(ev){" +
+            "var h=a.getAttribute('href')||'';" +
+            "if(h.indexOf('backup-download')>=0||h.indexOf('/dl/backup/')>=0){" +
+            "ev.preventDefault();" +
+            "if(window.SignalAndroid&&window.SignalAndroid.downloadUrl){" +
+            "var abs=h.indexOf('http')===0?h:(location.origin+(h.charAt(0)==='/'?h:'/'+h));" +
+            "window.SignalAndroid.downloadUrl(abs);" +
+            "}else{location.href=h;}" +
+            "}} ,true);" +
+            "});" +
+            "}catch(e){}" +
+            "})();"
+        )
         webView.evaluateJavascript(js, null)
     }
 
