@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">سیگنال بورس</string>
+    <string name="settings">تنظیمات</string>
+    <string name="biometric_title">ورود به سیگنال بورس</string>
+    <string name="biometric_subtitle">اثرانگشت یا تشخیص چهره</string>
+    <string name="biometric_description">برای باز کردن اپ هویت خود را تأیید کنید</string>
+    <string name="biometric_cancel">انصراف</string>
+    <string name="biometric_error">بیومتریک در دسترس نیست</string>
+    <string name="retry">تلاش دوباره</string>
+    <string name="open_settings">تنظیمات سرور</string>
+    <string name="server_url">آدرس سرور</string>
+    <string name="save">ذخیره</string>
+    <string name="use_biometric">ورود با بیومتریک هنگام باز شدن اپ</string>
+    <string name="loading">در حال بارگذاری…</string>
+</resources>
