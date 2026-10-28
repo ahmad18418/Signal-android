@@ -11,8 +11,8 @@ android {
         applicationId "com.signalalert.app"
         minSdk 26
         targetSdk 34
-        versionCode 2
-        versionName "1.2.0"
+        versionCode 3
+        versionName "1.2.1"
         // آدرس سرور پیش‌فرض — در تنظیمات اپ هم قابل تغییر است
         buildConfigField "String", "DEFAULT_SERVER_URL", "\"http://130.185.75.146\""
     }
