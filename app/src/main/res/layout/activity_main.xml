@@ -62,6 +62,15 @@
             android:text="@string/open_settings"
             app:strokeColor="#64748b"
             android:textColor="#e2e8f0" />
+
+        <TextView
+            android:id="@+id/versionText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textColor="#64748b"
+            android:textSize="12sp"
+            android:text="v—" />
     </LinearLayout>
 
     <ProgressBar

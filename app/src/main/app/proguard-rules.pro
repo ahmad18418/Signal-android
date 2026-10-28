@@ -1,1 +1,0 @@
-# Signal Alert — keep simple
