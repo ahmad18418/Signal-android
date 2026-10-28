@@ -270,6 +270,7 @@ class MainActivity : AppCompatActivity() {
     private fun isDownloadUrl(u: String): Boolean {
         val low = u.lowercase()
         return low.contains("/settings/backup-download/") ||
+            low.contains("/dl/backup/") ||
             low.contains("/api/table_xlsx") ||
             low.contains("/api/backup") ||
             low.endsWith(".db") ||
@@ -311,9 +312,14 @@ class MainActivity : AppCompatActivity() {
                     )
                     setRequestProperty("Accept", "*/*")
                 }
-                val cookie =
-                    CookieManager.getInstance().getCookie(absoluteUrl)
-                        ?: CookieManager.getInstance().getCookie(prefs.serverUrl)
+                val cm = CookieManager.getInstance()
+                val cookie = listOf(
+                    cm.getCookie(absoluteUrl),
+                    cm.getCookie(prefs.serverUrl),
+                    cm.getCookie(prefs.serverUrl.trimEnd('/') + "/"),
+                    cm.getCookie("http://130.185.75.146"),
+                    cm.getCookie("http://130.185.75.146/")
+                ).firstOrNull { !it.isNullOrBlank() }
                 if (!cookie.isNullOrBlank()) {
                     conn.setRequestProperty("Cookie", cookie)
                 }
@@ -423,30 +429,47 @@ class MainActivity : AppCompatActivity() {
     private fun injectDownloadHook() {
         val js = """
             (function(){
-              if (window.__saDlHook) return;
-              window.__saDlHook = true;
-              document.addEventListener('click', function(ev){
-                try {
-                  var a = ev.target;
-                  while (a && a.tagName !== 'A') a = a.parentElement;
-                  if (!a || !a.href) return;
-                  var h = a.getAttribute('href') || a.href || '';
-                  if (h.indexOf('/settings/backup-download/') >= 0 ||
-                      h.indexOf('/api/table_xlsx') >= 0 ||
-                      /\.(db|xlsx|csv|zip)(\?|$)/i.test(h)) {
-                    ev.preventDefault();
-                    if (window.SignalAndroid && window.SignalAndroid.downloadUrl) {
-                      window.SignalAndroid.downloadUrl(a.href);
-                    } else {
-                      location.href = a.href;
-                    }
+              try {
+                window.saDownload = function(url, fileName) {
+                  var name = fileName || '';
+                  if (!name && url) {
+                    try { name = decodeURIComponent(String(url).split('/').pop() || ''); }
+                    catch(e) { name = String(url).split('/').pop() || 'backup.db'; }
                   }
-                } catch(e) {}
-              }, true);
+                  if (!name) { alert('نام فایل مشخص نیست'); return false; }
+                  var path = '/settings/backup-download/' + encodeURIComponent(name);
+                  var abs = location.origin + path;
+                  if (window.SignalAndroid && window.SignalAndroid.downloadUrl) {
+                    window.SignalAndroid.downloadUrl(abs);
+                    return false;
+                  }
+                  location.href = path;
+                  return false;
+                };
+              } catch(e) {}
+              try {
+                document.querySelectorAll('a[href*="backup-download"], a[href*="/dl/backup/"]').forEach(function(a){
+                  if (a.__saHooked) return;
+                  a.__saHooked = true;
+                  a.addEventListener('click', function(ev){
+                    var h = a.getAttribute('href') || '';
+                    if (h.indexOf('backup-download') >= 0 || h.indexOf('/dl/backup/') >= 0) {
+                      ev.preventDefault();
+                      if (window.SignalAndroid && window.SignalAndroid.downloadUrl) {
+                        var abs = h.indexOf('http') === 0 ? h : (location.origin + (h.charAt(0)==='/'?h:'/'+h));
+                        window.SignalAndroid.downloadUrl(abs);
+                      } else {
+                        location.href = h;
+                      }
+                    }
+                  }, true);
+                });
+              } catch(e) {}
             })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
     }
+
 
     inner class JsBridge {
         @JavascriptInterface
